@@ -36,15 +36,16 @@ def encontrar_sucesores(datos_actividades):
 # --- Datos de entrada del ejemplo ---
 # [Actividad, Predecesor(es), Duración]
 datos = [
-    ['a', '-', 20],
-    ['b', 'a', 10],
-    ['c', 'b', 8],
-    ['d', 'a', 11],
-    ['e', 'c,d', 7],
-    ['f', 'e', 6],
-    ['g', 'd', 12],
-    ['h', 'e', 13],
-    ['i', 'g,h', 5],]
+    ['EST', 'CIM', 5],
+    ['CIM', '-', 3],
+    ['VITE', 'EST', 2],
+    ['RETE', 'VITE', 3],
+    ['ELEC', 'EST', 4],
+    ['EXT', 'VENT', 4],
+    ['VENT', 'EST', 2],
+    ['PINT', 'RETE,EXT,INT', 2],
+    ['INT', 'ELEC,VENT', 3],
+]
 
 # --- Ejecutar el programa ---
 mapa_dependencias = encontrar_sucesores(datos)

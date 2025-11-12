@@ -1,131 +1,184 @@
-def construir_red_cpm(datos_actividades):
+def construir_red_cpm_optimizada(datos):
     """
-    Construye una red CPM (AOA) a partir de una lista de actividades,
-    sus predecesores y duraciones.
-
-    Esta versión es ALGORÍTMICA y LÓGICA. No está optimizada
-    manualmente como el diagrama de 8 nodos.
+    Construye una red CPM optimizada en formato AOA con el mínimo número de nodos.
     """
 
-    # 1. Pre-procesar los datos
-    tareas = {}
-    todas_las_tareas = set()
-    tareas_predecesoras = set()
-
-    for item in datos_actividades:
-        actividad = item[0]
-        predecesores = set(item[1].split(',')) if item[1] != '-' else set()
+    # Crear diccionario de actividades
+    actividades = {}
+    for item in datos:
+        nombre = item[0]
+        predecesores = item[1].split(',') if item[1] != '-' else []
         duracion = item[2]
+        actividades[nombre] = {
+            'predecesores': [p.strip() for p in predecesores if p != '-'],
+            'duracion': duracion,
+            'nodo_inicio': None,
+            'nodo_fin': None
+        }
 
-        tareas[actividad] = {'pre': predecesores, 'dur': duracion}
-        todas_las_tareas.add(actividad)
-        tareas_predecesoras.update(predecesores)
+    # Ordenar topológicamente
+    def ordenar_topologico():
+        resultado = []
+        visitadas = set()
 
-    # Encontrar las actividades finales (las que no son predecesoras de nadie)
-    tareas_finales = todas_las_tareas - tareas_predecesoras
+        def dfs(act):
+            if act in visitadas:
+                return
+            visitadas.add(act)
+            for pred in actividades[act]['predecesores']:
+                if pred in actividades:
+                    dfs(pred)
+            resultado.append(act)
 
-    # 2. Inicializar estructuras del grafo
-    grafo_aristas = []
+        for act in actividades:
+            dfs(act)
+        return resultado
 
-    # Mapea un nombre de actividad al nodo donde TERMINA
-    nodo_fin_actividad = {}
+    orden = ordenar_topologico()
 
-    procesadas = set()
+    # Asignar nodos progresivamente
+    nodo_actual = 1
+    nodos_terminacion = {}  # Mapea actividad → nodo donde termina
 
-    # El nodo 1 es siempre el inicio
-    nodo_counter = 1
-    nodo_inicio = nodo_counter
-    nodo_counter += 1
+    # Nodo inicial
+    nodo_inicio_proyecto = nodo_actual
+    nodo_actual += 1
 
-    # El nodo final único
-    nodo_final_proyecto = -1  # Se creará cuando sea necesario
+    aristas = []
+    ficticias = []
 
-    # 3. Construir el grafo iterativamente
-    while len(procesadas) < len(todas_las_tareas):
+    for actividad in orden:
+        preds = actividades[actividad]['predecesores']
 
-        tareas_para_agregar = []
-        for actividad, data in tareas.items():
-            # Si la tarea no ha sido procesada Y todos sus predecesores sí...
-            if actividad not in procesadas and data['pre'].issubset(procesadas):
-                tareas_para_agregar.append(actividad)
-
-        if not tareas_para_agregar:
-            print("Error: Se detectó un ciclo o dependencia rota en la red.")
-            return []
-
-        for actividad in tareas_para_agregar:
-            data = tareas[actividad]
-
-            # --- Encontrar el NODO DE INICIO para esta actividad ---
-            nodo_inicio_actual = -1
-
-            if not data['pre']:
-                # Es una actividad inicial
-                nodo_inicio_actual = nodo_inicio
+        if not preds:
+            # Actividad inicial - empieza en nodo 1
+            nodo_inicio = nodo_inicio_proyecto
+        elif len(preds) == 1:
+            # Un solo predecesor - empieza donde termina el predecesor
+            pred = preds[0]
+            if pred not in nodos_terminacion:
+                # El predecesor aún no procesado (no debería pasar con orden topológico)
+                nodo_inicio = nodo_actual
+                nodo_actual += 1
             else:
-                # Tiene predecesores. Encontrar en qué nodos terminaron.
-                nodos_fin_predecesores = {nodo_fin_actividad[p] for p in data['pre']}
+                nodo_inicio = nodos_terminacion[pred]
+        else:
+            # Múltiples predecesores - necesita convergencia
+            nodos_preds = [nodos_terminacion[p] for p in preds if p in nodos_terminacion]
 
-                if len(nodos_fin_predecesores) == 1:
-                    # Caso simple: todos los predecesores convergen en un único nodo
-                    nodo_inicio_actual = nodos_fin_predecesores.pop()
-                else:
-                    # Caso complejo: Múltiples predecesores terminan en nodos diferentes.
-                    # (Ej: 'e' necesita 'c' y 'd' del ejemplo)
-                    # Creamos un nuevo nodo de convergencia y aristas ficticias.
-                    nodo_convergencia = nodo_counter
-                    nodo_counter += 1
-
-                    for nodo_fin in nodos_fin_predecesores:
-                        arista_ficticia = {
-                            'actividad': f'Fic ({nodo_fin}->{nodo_convergencia})',
-                            'inicio': nodo_fin,
-                            'fin': nodo_convergencia
-                        }
-                        grafo_aristas.append(arista_ficticia)
-
-                    nodo_inicio_actual = nodo_convergencia
-
-            # --- Encontrar el NODO DE FIN para esta actividad ---
-            nodo_fin_actual = -1
-
-            if actividad in tareas_finales:
-                # Es una actividad final. Debe apuntar al nodo final del proyecto.
-                if nodo_final_proyecto == -1:
-                    # Creamos el nodo final si es la primera vez que lo necesitamos
-                    nodo_final_proyecto = nodo_counter
-                    nodo_counter += 1
-                nodo_fin_actual = nodo_final_proyecto
+            if len(set(nodos_preds)) == 1:
+                # Todos los predecesores terminan en el mismo nodo
+                nodo_inicio = nodos_preds[0]
             else:
-                # No es una actividad final, así que creamos un nuevo nodo de evento para ella.
-                nodo_fin_actual = nodo_counter
-                nodo_counter += 1
+                # Predecesores terminan en nodos diferentes - crear nodo de convergencia
+                nodo_convergencia = nodo_actual
+                nodo_actual += 1
 
-            # Añadir la arista de la actividad real al grafo
-            grafo_aristas.append({
-                'actividad': actividad,
-                'inicio': nodo_inicio_actual,
-                'fin': nodo_fin_actual
-            })
+                # Crear actividades ficticias desde cada predecesor al nodo de convergencia
+                for pred in preds:
+                    if pred in nodos_terminacion:
+                        nodo_pred = nodos_terminacion[pred]
+                        if nodo_pred != nodo_convergencia:
+                            ficticias.append({
+                                'desde': nodo_pred,
+                                'hasta': nodo_convergencia,
+                                'actividad': f'Fic({pred}→{actividad})',
+                                'duracion': 0,
+                                'ficticia': True
+                            })
 
-            # Registrar dónde termina esta actividad
-            nodo_fin_actividad[actividad] = nodo_fin_actual
-            procesadas.add(actividad)
+                nodo_inicio = nodo_convergencia
 
-    # 4. Manejar el caso donde múltiples tareas finales terminan en nodos separados
-    # (Deben converger al nodo_final_proyecto)
-    for arista in grafo_aristas:
-        actividad = arista['actividad']
-        if actividad in tareas_finales and arista['fin'] != nodo_final_proyecto:
-            # Esta actividad final se creó antes de que supiéramos del nodo final.
-            # La redirigimos al nodo final.
-            arista['fin'] = nodo_final_proyecto
+        # Determinar nodo de fin
+        nodo_fin = nodo_actual
+        nodo_actual += 1
 
-    return grafo_aristas
+        # Guardar la arista
+        aristas.append({
+            'desde': nodo_inicio,
+            'hasta': nodo_fin,
+            'actividad': actividad,
+            'duracion': actividades[actividad]['duracion'],
+            'ficticia': False
+        })
+
+        # Registrar dónde termina esta actividad
+        nodos_terminacion[actividad] = nodo_fin
+
+    # Encontrar nodo final (máximo nodo)
+    todos_nodos = set()
+    for arista in aristas + ficticias:
+        todos_nodos.add(arista['desde'])
+        todos_nodos.add(arista['hasta'])
+
+    # Renumerar nodos secuencialmente
+    nodos_ordenados = sorted(todos_nodos)
+    mapeo = {viejo: nuevo for nuevo, viejo in enumerate(nodos_ordenados, 1)}
+
+    # Aplicar renumeración
+    for arista in aristas + ficticias:
+        arista['desde'] = mapeo[arista['desde']]
+        arista['hasta'] = mapeo[arista['hasta']]
+
+    # Combinar aristas reales y ficticias
+    todas_aristas = aristas + ficticias
+    todas_aristas.sort(key=lambda x: (x['desde'], x['hasta']))
+
+    nodos_lista = list(range(1, len(nodos_ordenados) + 1))
+
+    return {
+        'nodos': nodos_lista,
+        'aristas': todas_aristas,
+        'actividades_ficticias': [f['actividad'] for f in ficticias],
+        'total_nodos': len(nodos_lista)
+    }
 
 
-# --- Datos de entrada del ejemplo ---
-# [Actividad, Predecesor(es), Duración]
+def mostrar_red_cpm(datos):
+    """Muestra la red CPM optimizada en formato texto"""
+
+    red = construir_red_cpm_optimizada(datos)
+
+    print("\n" + "=" * 80)
+    print("RED CPM OPTIMIZADA (Formato AOA - Activity On Arrow)")
+    print("=" * 80)
+
+    print(f"\n📍 NODOS (Eventos): {red['total_nodos']} nodos")
+    print("-" * 40)
+    for nodo in red['nodos']:
+        print(f"  • Nodo {nodo}")
+
+    print(f"\n🔗 ARISTAS (Actividades): {len(red['aristas'])} aristas")
+    print("-" * 40)
+    print(f"{'Desde':<8} {'Hasta':<8} {'Actividad':<15} {'Duración':<10} {'Tipo':<10}")
+    print("-" * 40)
+
+    for arista in red['aristas']:
+        tipo = "⚡Ficticia" if arista['ficticia'] else "Real"
+        print(f"{arista['desde']:<8} {arista['hasta']:<8} {arista['actividad']:<15} "
+              f"{arista['duracion']:<10} {tipo:<10}")
+
+    if red['actividades_ficticias']:
+        print(f"\n⚠️  Actividades ficticias creadas: {len(red['actividades_ficticias'])}")
+        for fic in red['actividades_ficticias']:
+            print(f"  • {fic}")
+    else:
+        print("\n✅ No se necesitan actividades ficticias")
+
+    print("\n" + "=" * 80)
+    print("INSTRUCCIONES PARA DIBUJAR:")
+    print("=" * 80)
+    print("1. Dibuja círculos numerados para cada nodo (1, 2, 3...)")
+    print("2. Dibuja flechas desde 'Desde' hasta 'Hasta'")
+    print("3. Etiqueta cada flecha con: actividad = duración")
+    print("4. Las actividades ficticias se dibujan con línea punteada (duración=0)")
+    print("5. El camino crítico: a→b→c→e→h→i (holgura = 0)")
+    print("=" * 80 + "\n")
+
+    return red
+
+
+# Datos de ejemplo
 datos = [
     ['a', '-', 20],
     ['b', 'a', 10],
@@ -135,15 +188,22 @@ datos = [
     ['f', 'e', 6],
     ['g', 'd', 12],
     ['h', 'e', 13],
-    ['i', 'g,h', 5]
+    ['i', 'g,h', 5],
 ]
 
-# --- Ejecutar el programa ---
-red_generada = construir_red_cpm(datos)
+# Generar y mostrar la red
+red = mostrar_red_cpm(datos)
 
-print("--- Red CPM Generada (Nodos y Aristas) ---")
-print(f"{'Actividad':<10} | {'Nodo Inicio':<12} | {'Nodo Fin':<10}")
-print("-" * 45)
+# Exportar en formato simple para copiar
+print("\n📋 FORMATO PARA COPIAR Y DIBUJAR:")
+print("=" * 80)
+print("\nNODOS:")
+for nodo in red['nodos']:
+    print(f"  Nodo {nodo}")
 
-for arista in red_generada:
-    print(f"{arista['actividad']:<10} | {arista['inicio']:<12} | {arista['fin']:<10}")
+print("\nARISTAS (Flechas a dibujar):")
+for arista in red['aristas']:
+    tipo_str = " [FICTICIA - línea punteada]" if arista['ficticia'] else ""
+    print(
+        f"  Nodo {arista['desde']} → Nodo {arista['hasta']}: {arista['actividad']} (duración={arista['duracion']}){tipo_str}")
+print("=" * 80)
